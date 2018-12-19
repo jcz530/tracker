@@ -71,7 +71,9 @@ class Cache
     public function findCachedWithKey($key)
     {
         if ($this->config->get('cache_enabled')) {
-            return IlluminateCache::get($key);
+            try {
+                return IlluminateCache::get($key);
+            } catch(\Exception $e) {}
         }
     }
 
