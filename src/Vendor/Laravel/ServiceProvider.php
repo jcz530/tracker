@@ -51,6 +51,8 @@ class ServiceProvider extends PragmaRXServiceProvider
 
     protected $packageNameCapitalized = 'Tracker';
 
+    protected $repositoryManagerIsBooted = false;
+
     /**
      * Indicates if loading of the provider is deferred.
      *
@@ -79,11 +81,19 @@ class ServiceProvider extends PragmaRXServiceProvider
 
         $this->registerErrorHandler();
 
-        if (!isLaravel5()) {
-            $this->bootTracker();
-        }
+        $this->bootTracker();
 
         $this->loadTranslations();
+    }
+
+    /**
+     * Check if the service provider is full booted.
+     *
+     * @return void
+     */
+    public function isFullyBooted()
+    {
+        return $this->repositoryManagerIsBooted;
     }
 
     /**
@@ -146,14 +156,14 @@ class ServiceProvider extends PragmaRXServiceProvider
             $app['tracker.loaded'] = true;
 
             return new Tracker(
-                                    $app['tracker.config'],
-                                    $app['tracker.repositories'],
-                                    $app['request'],
-                                    $app['router'],
-                                    $app['log'],
-                                    $app,
-                                    $app['tracker.messages']
-                                );
+                $app['tracker.config'],
+                $app['tracker.repositories'],
+                $app['request'],
+                $app['router'],
+                $app['log'],
+                $app,
+                $app['tracker.messages']
+            );
         });
     }
 
@@ -259,81 +269,58 @@ class ServiceProvider extends PragmaRXServiceProvider
                 $app['request']->server('HTTP_USER_AGENT')
             );
 
-            return new RepositoryManager(
+            $manager = new RepositoryManager(
                 new GeoIp($this->getConfig('geoip_database_path')),
-
                 new MobileDetect(),
-
                 $uaParser,
-
                 $app['tracker.authentication'],
-
                 $app['session.store'],
-
                 $app['tracker.config'],
-
-                new Session($sessionModel,
-                            $app['tracker.config'],
-                            new PhpSession()),
-
+                new Session(
+                    $sessionModel,
+                    $app['tracker.config'],
+                    new PhpSession()
+                ),
                 $logRepository,
-
                 new Path($pathModel),
-
                 new Query($queryModel),
-
                 new QueryArgument($queryArgumentModel),
-
                 new Agent($agentModel),
-
                 new Device($deviceModel),
-
-                new Cookie($cookieModel,
-                            $app['tracker.config'],
-                            $app['request'],
-                            $app['cookie']),
-
+                new Cookie(
+                    $cookieModel,
+                    $app['tracker.config'],
+                    $app['request'],
+                    $app['cookie']
+                ),
                 new Domain($domainModel),
-
                 new Referer(
                     $refererModel,
                     $refererSearchTermModel,
                     $this->getAppUrl(),
                     $app->make('PragmaRX\Tracker\Support\RefererParser')
                 ),
-
                 $routeRepository,
-
                 new RoutePath($routePathModel),
-
                 new RoutePathParameter($routePathParameterModel),
-
                 new Error($errorModel),
-
                 new GeoIpRepository($geoipModel),
-
                 $sqlQueryRepository,
-
                 $sqlQueryBindingRepository,
-
                 $sqlQueryBindingParameterRepository,
-
                 $sqlQueryLogRepository,
-
                 $connectionRepository,
-
                 $eventRepository,
-
                 $eventLogRepository,
-
                 $systemClassRepository,
-
                 $crawlerDetect,
-
                 new Language($languageModel),
-
                 new LanguageDetect()
             );
+
+            $this->repositoryManagerIsBooted = true;
+
+            return $manager;
         });
     }
 
@@ -377,25 +364,15 @@ class ServiceProvider extends PragmaRXServiceProvider
     protected function registerErrorHandler()
     {
         if ($this->getConfig('log_exceptions')) {
-            if (isLaravel5()) {
-                $illuminateHandler = 'Illuminate\Contracts\Debug\ExceptionHandler';
+            $illuminateHandler = 'Illuminate\Contracts\Debug\ExceptionHandler';
 
-                $handler = new TrackerExceptionHandler(
-                    $this->getTracker(),
-                    $this->app[$illuminateHandler]
-                );
+            $handler = new TrackerExceptionHandler(
+                $this->getTracker(),
+                $this->app[$illuminateHandler]
+            );
 
-                // Replace original Illuminate Exception Handler by Tracker's
-                $this->app[$illuminateHandler] = $handler;
-            } else {
-                $me = $this;
-
-                $this->app->error(
-                    function (\Exception $exception, $code) use ($me) {
-                        $me->app['tracker']->handleException($exception, $code);
-                    }
-                );
-            }
+            // Replace original Illuminate Exception Handler by Tracker's
+            $this->app[$illuminateHandler] = $handler;
         }
     }
 
@@ -430,10 +407,12 @@ class ServiceProvider extends PragmaRXServiceProvider
         $me = $this;
 
         if (!class_exists('Illuminate\Database\Events\QueryExecuted')) {
-            $this->app['events']->listen('illuminate.query', function ($query,
-                                                                        $bindings,
-                                                                        $time,
-                                                                        $name) use ($me) {
+            $this->app['events']->listen('illuminate.query', function (
+                $query,
+                $bindings,
+                $time,
+                $name
+            ) use ($me) {
                 $me->logSqlQuery($query, $bindings, $time, $name);
             });
         } else {
@@ -473,7 +452,7 @@ class ServiceProvider extends PragmaRXServiceProvider
         });
 
         $this->app['events']->listen('*', function ($object = null) use ($me) {
-            if ($me->app['tracker.events']->isOff()) {
+            if ($me->app['tracker.events']->isOff() || !$me->isFullyBooted()) {
                 return;
             }
 

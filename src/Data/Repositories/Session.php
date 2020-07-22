@@ -132,6 +132,9 @@ class Session extends Repository
         $wasComplete = true;
 
         foreach ($this->sessionInfo as $key => $value) {
+            if ($key === 'user_agent') {
+                continue;
+            }
             if ($sessionData[$key] !== $value) {
                 if (!isset($model)) {
                     $model = $this->find($this->sessionInfo['id']);
@@ -175,7 +178,7 @@ class Session extends Repository
             return $sessionData['uuid'];
         }
 
-        return (string) UUID::uuid4();
+        return UUID::uuid4()->toString();
     }
 
     private function regenerateSystemSession($data = null)
